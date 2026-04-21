@@ -1,0 +1,87 @@
+PART 1 — Launch EC2 Instances via AWS CLI
+Step 1 — Set variables
+
+export AWS_REGION="us-east-1"
+export KEY_NAME="k8s-key"
+export AMI_ID="ami-0ec10929233384c7f"   # Ubuntu 22.04 LTS us-east-1
+export INSTANCE_TYPE="t3.medium"         # minimum for kubeadm
+export SG_NAME="k8s-sg"
+export VPC_ID=$(aws ec2 describe-vpcs \
+  --filters "Name=isDefault,Values=true" \
+  --query "Vpcs[0].VpcId" \
+  --output text \
+  --region $AWS_REGION)
+
+OR 
+export VPC_ID="vpc-001866cb7154ecebd"
+
+#################################################
+Step 2 — Create key pair
+
+aws ec2 create-key-pair \
+  --key-name $KEY_NAME \
+  --query "KeyMaterial" \
+  --output text > ~/.ssh/$KEY_NAME.pem
+
+chmod 400 ~/.ssh/$KEY_NAME.pem
+
+###########################
+Step 3 — Create security group
+
+SG_ID=$(aws ec2 create-security-group \
+  --group-name $SG_NAME \
+  --description "K8s cluster security group" \
+  --vpc-id $VPC_ID \
+  --query "GroupId" \
+  --output text)
+
+echo "SG_ID: $SG_ID"
+#######################
+Step 4 — Add security group rules
+# SSH
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 22 --cidr 0.0.0.0/0
+
+# Kubernetes API server
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 6443 --cidr 0.0.0.0/0
+
+# etcd
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 2379-2380 --cidr 0.0.0.0/0
+
+# Kubelet API
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 10250 --cidr 0.0.0.0/0
+
+# NodePort services
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 30000-32767 --cidr 0.0.0.0/0
+
+# Allow all internal traffic within SG
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol all --port all --source-group $SG_ID
+
+# HTTP/HTTPS for ingress
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-id $SG_ID \
+  --protocol tcp --port 443 --cidr 0.0.0.0/0
+
+#######################
+
+Step 5 — Launch master node
+MASTER_ID=$(aws ec2 run-instances \
+  --image-id $AMI_ID \
+  --instance-type $INSTANCE_TYPE \
+  --key-name $KEY_NAME \
+  --security-group-ids $SG_ID \
+  --count 1 \
+  --tag-specifications \
+    'ResourceType=instance,Tags=[{Key=Name,Value=k8s-master},{Key=Role,Value=master}]' \
+  --block-device-mappings \
+    'DeviceName=/dev/sda1,Ebs={VolumeSize=20,VolumeType=gp3}' \
+  --query "Instances[0].InstanceId" \
+  --output text)
+
+echo "Master ID: $MASTER_ID"
