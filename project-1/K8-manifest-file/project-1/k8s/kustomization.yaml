@@ -6,6 +6,7 @@ resources:
   - namespace.yaml
   - secrets/db-secret.yaml
   - backend/configmap.yaml
+  - database/pv.yaml
   - database/pvc.yaml
   - database/statefulset.yaml
   - database/service.yaml

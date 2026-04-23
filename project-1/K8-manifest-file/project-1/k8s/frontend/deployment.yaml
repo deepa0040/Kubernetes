@@ -18,7 +18,7 @@ spec:
         runAsUser: 101        # nginx user
       containers:
         - name: frontend
-          image: your-registry/frontend:latest   # replace with your image
+          image: shynleaf/frontend:latest   # replace with your image
           imagePullPolicy: Always
           ports:
             - containerPort: 80
